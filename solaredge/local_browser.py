@@ -6,11 +6,12 @@ from selenium.webdriver import Remote
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.firefox.options import Options as Firefox_Options
 
-from utils import get_geckodriver, create_firefox_extension, sleep
-from config import DATAPATH, BROWSER_DATA
+from config import BROWSER_DATA, DATAPATH
+from utils import (create_firefox_extension, get_chrome_driver,
+                   get_geckodriver, sleep)
 
 
-def create_proxied_browser_instance(proxy=None, use_proxy=False, headless=False) -> webdriver.Chrome:
+def create_proxied_browser_instance(proxy=None, use_proxy=False, headless=False, use_data_dir=False) -> webdriver.Chrome:
     chrome_options = webdriver.ChromeOptions()
     capabilities = webdriver.DesiredCapabilities.CHROME
     prefs = {'disk-cache-size': 4096}
@@ -21,8 +22,8 @@ def create_proxied_browser_instance(proxy=None, use_proxy=False, headless=False)
     chrome_options.add_argument("--start-maximized")
     chrome_options.add_argument("log-level=3")
     chrome_options.add_argument("ignore-certificate-errors")
-    chrome_options.add_argument(
-        'user-data-dir={D}'.format(D=BROWSER_DATA))
+    if use_data_dir:
+        chrome_options.add_argument('user-data-dir={D}'.format(D=BROWSER_DATA))
 
     try:
         extension = create_firefox_extension()
@@ -32,10 +33,15 @@ def create_proxied_browser_instance(proxy=None, use_proxy=False, headless=False)
     if extension:
         chrome_options.add_extension(extension)
 
+    driver_path = get_chrome_driver()
+    if not driver_path:
+        raise Exception("Chrome driver not found")
     driver: webdriver.Chrome = webdriver.Chrome(
-        options=chrome_options, desired_capabilities=capabilities)
-    #driver.implicitly_wait(30)
-
+        executable_path=driver_path,
+        options=chrome_options,
+        desired_capabilities=capabilities
+    )
+  
     return driver
 
 
@@ -110,6 +116,7 @@ def proxy_authentication(browser, proxy_username, proxy_password) -> bool:
         alert_popup.accept()
         return True
     except WebDriverException as e:
+        print(e)
         return False
 
 

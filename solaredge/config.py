@@ -21,7 +21,7 @@ if not os.path.exists(LOG_PATH):
 
 ASSETS_PATH = os.path.join(ROOT, 'assets')
 if not os.path.exists(ASSETS_PATH):
-    os.mkdir(ASSETS_PATH)
+    os.mkdir(ASSETS_PATH , 777)
 
 EXTENSION_PATH = os.path.join(ROOT, 'extension')
 LOG_FILE = os.path.join(LOG_PATH, 'browser.log')

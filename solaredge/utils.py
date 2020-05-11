@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import shutil
 import zipfile
@@ -8,19 +9,39 @@ from os.path import sep as native_slash
 from pathlib import Path
 from random import gauss, uniform
 from time import sleep as original_sleep
-
+import os
+import colorlog
+import sys
 from selenium.common.exceptions import (NoSuchElementException,
                                         TimeoutException, WebDriverException)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
-from webdriverdownloader import GeckoDriverDownloader
-
+from webdriverdownloader import ChromeDriverDownloader, GeckoDriverDownloader
+from logging import Handler, Logger, StreamHandler
 from config import ASSETS_PATH, EXTENSION_PATH
-
+import shutil
 STDEV = 0.5
 sleep_percentage = 1
 sleep_percentage = sleep_percentage * uniform(0.9, 1.1)
+
+
+def make_dir(_dir: str) -> None:
+    if not os.path.exists(_dir):
+        os.mkdir(_dir)
+
+
+def mkdirs(path, mode):
+    """
+    """
+    try:
+        o_umask = os.umask(0)
+        os.makedirs(path, mode)
+    except OSError:
+        if not os.path.isdir(path):
+            raise
+    finally:
+        os.umask(o_umask)
 
 
 def randomize_time(mean):
@@ -74,14 +95,37 @@ def get_time(labels):
     return results
 
 
+def get_chrome_driver():
+    home = os.path.expanduser('~')
+    driverpath = os.path.join(home, 'browser-drivers')
+    if not os.path.exists(driverpath):
+        os.mkdir(driverpath)
+        sys.path.insert(0, str(Path(driverpath).absolute()))
+    else:
+        for filename in os.listdir(driverpath):
+            if filename == 'chromedriver.exe':
+                filepath = os.path.join(driverpath, filename)
+                return filepath
+
+    chrome_path = shutil.which(
+        "chromedriver") or shutil.which("chromedriver.exe")
+    if chrome_path:
+        return chrome_path
+
+    try:
+        gdd = ChromeDriverDownloader(driverpath, driverpath)
+        _, sym_path = gdd.download_and_install()
+        return sym_path
+    except OSError:
+        return None
+
+
 def get_geckodriver():
-    # prefer using geckodriver from path
     gecko_path = shutil.which("geckodriver") or shutil.which("geckodriver.exe")
     if gecko_path:
         return gecko_path
     gdd = GeckoDriverDownloader(ASSETS_PATH, ASSETS_PATH)
-    # skips download if already downloaded
-    bin_path, sym_path = gdd.download_and_install()
+    _, sym_path = gdd.download_and_install()
     return sym_path
 
 
@@ -283,3 +327,142 @@ def is_page_available(browser, logger):
             return False
 
     return True
+
+
+def set_log_context(logger, value):
+    """
+    Walks the tree of loggers and tries to set the context for each handler
+    :param logger: logger
+    :param value: value to set
+    """
+    _logger = logger
+    while _logger:
+        for handler in _logger.handlers:
+            try:
+                handler.set_context(value)
+            except AttributeError:
+                # Not all handlers need to have context passed in so we ignore
+                # the error when handlers do not have set_context defined.
+                pass
+        if _logger.propagate is True:
+            _logger = _logger.parent
+        else:
+            _logger = None
+
+
+class LoggingMixin:
+    """Convenience super-class to have a logger
+        configured with the class name
+    """
+
+    def __init__(self, context=None):
+        self._set_context(context)
+
+    @property
+    def log(self) -> Logger:
+        """
+        Returns a logger.
+        """
+        try:
+            return self._log
+        except AttributeError:
+            self._log = logging.getLogger(
+                self.__class__.__module__ + '.' + self.__class__.__name__
+            )
+            return self._log
+
+    def _set_context(self, context):
+        if context is not None:
+            set_log_context(self.log, context)
+
+
+class BotRuntimeHandler(logging.Handler):
+    """ Creates New log entries for each bot run"""
+
+    def __init__(self, base_log_folder: str):
+        super().__init__()
+        self.local_base = base_log_folder
+        self.handler = None
+        local_loc = self._init_file()
+        self.handler = logging.FileHandler(local_loc, encoding='utf-8')
+        if self.formatter:
+            self.handler.setFormatter(self.formatter)
+        self.handler.setLevel(self.level)
+
+    def emit(self, record):
+        if self.handler:
+            self.handler.emit(record)
+
+    def flush(self):
+        if self.handler:
+            self.handler.flush()
+
+    def close(self):
+        if self.handler:
+            self.handler.close()
+
+    def _init_file(self):
+        """
+        """
+        try:
+            relative_path = "%s/runtime.log" % (
+                str(datetime.now().date()))
+            full_path = os.path.join(self.local_base, relative_path)
+            directory = os.path.dirname(full_path)
+            if not os.path.exists(directory):
+                mkdirs(directory, 0o777)
+
+            if not os.path.exists(full_path):
+                open(full_path, "a").close()
+                os.chmod(full_path, 0o666)
+
+            return full_path
+        except Exception as e:
+            print(e)
+
+
+def create_logger(name: str, level: int = logging.DEBUG) -> None:
+    """Create a configured instance of logger.
+
+    :param int level:
+        Describe the severity level of the logs to handle.
+    """
+    from config import LOG_PATH
+
+    logger = logging.getLogger(name)
+
+    date_fmt = '%Y-%m-%d %H:%M:%S'
+    fmt = '[%(asctime)s,%(msecs)-d][%(threadName)-1s][%(levelname)-1s]: %(message)s'
+
+    formatter = logging.Formatter(fmt, datefmt=date_fmt)
+    colored_formater = colorlog.ColoredFormatter(
+        "[%(blue)s%(asctime)s,%(msecs)-d%(reset)s][%(log_color)s%(threadName)-1s%(reset)s][%(log_color)s%(levelname)-1s%(reset)s] %(log_color)s%(message)s",
+        datefmt=date_fmt,
+        reset=True,
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'green',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'red,bg_white',
+        },
+        secondary_log_colors={
+            'message': {
+                'ERROR': 'red',
+                'CRITICAL': 'red',
+                'INFO': 'blue',
+
+            }
+        },
+        style='%'
+    )
+
+    console = colorlog.StreamHandler()
+    console.setFormatter(colored_formater)
+    bot_handler = BotRuntimeHandler(LOG_PATH)
+    bot_handler.setFormatter(formatter)
+    logger.addHandler(console)
+    logger.addHandler(bot_handler)
+    logger.setLevel(level)
+
+    return None

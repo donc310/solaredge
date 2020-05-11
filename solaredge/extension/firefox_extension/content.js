@@ -145,6 +145,8 @@ function injectJs() {
     script.innerHTML = customScript;
     script.type = 'text/javascript';
     script.id = '_ENGINE_';
+    script.setAttribute('data-version', '1.0.1')
+    script.setAttribute('data-ts' , new Date())
     document.head.insertBefore(script, document.head.children[0]);
 }
 injectJs();

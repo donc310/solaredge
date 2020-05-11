@@ -1,31 +1,39 @@
 from __future__ import absolute_import
 
+import logging
 import os
 import queue
+import random
 import signal
 import sys
 import threading
+import time
 from abc import ABCMeta, abstractmethod
 from csv import DictWriter
 from datetime import datetime
-from time import sleep
 from typing import Any, Dict, List, NamedTuple
-
+import json
 from selenium import webdriver
 from selenium.common.exceptions import (JavascriptException,
                                         NoSuchElementException,
                                         TimeoutException, WebDriverException)
 
-import logging
 from config import LOG_FILE, SCRAP_DATA
 from local_browser import (create_proxied_browser_instance,
                            set_selenium_local_session)
-from utils import is_page_available, web_address_navigator
+from utils import create_logger, is_page_available, web_address_navigator
 
-logger = logging.getLogger()
+create_logger('solaredge')
+logger = logging.getLogger('solaredge')
 lock = threading.Lock()
+
 EXIT_SIG = 0
-browser: webdriver.Chrome = create_proxied_browser_instance()
+try:
+    browser: webdriver.Chrome = create_proxied_browser_instance()
+except Exception as e:
+    logger.error(e)
+    sys.exit(-1)
+
 _url_ = "https://monitoringpublic.solaredge.com/solaredge-web/p/site/public?name=myerssolargrumbles#/layout"
 
 
@@ -44,19 +52,37 @@ class AbstractThreadWorker(metaclass=ABCMeta):
 class ScrappingThread(threading.Thread):
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        threading.Thread.__init__(self, *args, **kwargs)
         self._interested_threads: List[AbstractThreadWorker] = []
 
     def load_page(self):
         try:
             browser.get(_url_)
+            self.ensure_extension_loaded()
+            web_address_navigator(browser, _url_)
         except TimeoutException as e:
             logger.error(e)
+
+    def get_random(self) -> int:
+        return random.randint(60, (2*60))
+
+    def ensure_extension_loaded(self):
+        try:
+            engine = browser.execute_script(
+                'return document.getElementById("_ENGINE_")')
+            if engine:
+                logger.info("Scrap extension loaded , version:%s ts:%s" % (
+                    engine.get_attribute('data-version'), engine.get_attribute('data-ts')))
+                return
+        except JavascriptException as err_r:
+            logger.error(err_r)
 
     def run(self):
         self.load_page()
         while not EXIT_SIG:
-            sleep(1*60)
+            twait = self.get_random()
+            logger.info("Waiting for %s seconds "%twait)
+            time.sleep(twait)
             try:
                 data = browser.execute_script('return __get_data()')
                 if data and len(data['data']):
@@ -64,8 +90,8 @@ class ScrappingThread(threading.Thread):
                         datetime=datetime.now(), data=data['data'])
                     self.dispatch_message(message)
                 browser.execute_script('__scrap_data()')
-                print('scraping data')
-                sleep(1*60)
+                logger.info('scraping data %s' % (datetime.now()))
+                time.sleep(30)
                 data = browser.execute_script('return __get_data()')
                 if data and len(data['data']):
                     message = ScrapMessage(
@@ -91,17 +117,31 @@ class WorkerThread(AbstractThreadWorker, threading.Thread):
     def run(self):
         dispatcher_thread.register_interest(self)
         while not EXIT_SIG:
-            sleep(1*60)
+            time.sleep(1*60)
             message = self.queue.get()
             if isinstance(message, ScrapMessage):
                 self.process_message(message)
 
     def write_csv(self, data: List[Dict], path: str):
-        field_names = data[0].keys()
-        with open(path, 'a+', newline='') as write_obj:
-            dict_writer = DictWriter(write_obj, fieldnames=field_names)
-            for row in data:
-                dict_writer.writerow(row)
+        logger.info("Writing new data to %s" % (path))
+        field_names = list(data[0].keys())
+        try:
+            write_obj = None
+            exits = os.path.exists(path)
+            if exits:
+                write_obj = open(path, 'a+', newline='')
+                dict_writer = DictWriter(write_obj, fieldnames=field_names)
+                dict_writer.writerows(data)
+            else:
+                write_obj = open(path, 'w', newline='')
+                dict_writer = DictWriter(write_obj, fieldnames=field_names)
+                dict_writer.writeheader()
+                dict_writer.writerows(data)
+        except Exception as error:
+            logger.error(error)
+        finally:
+            if write_obj:
+                write_obj.close()
 
     def get_write_path(self, datetime: datetime):
         today = datetime.date()
@@ -112,13 +152,19 @@ class WorkerThread(AbstractThreadWorker, threading.Thread):
         dump = os.path.join(root, 'dump')
         if not os.path.exists(dump):
             os.mkdir(dump)
-        return csv_path, os.path.join(dump, str(datetime))
+        return csv_path, os.path.join(dump, str(datetime.timestamp()).replace('.', '_')+'.json')
 
     def dump_json(self, data: Dict, path: str):
-        pass
+        try:
+            with open(path, 'w') as json_obj:
+                logger.info("Dumping data to  %s" % (path))
+                json.dump(data, json_obj)
+        except Exception as e:
+            logger.error(e)
 
     def process_message(self, message: ScrapMessage):
         if self.role == 'DATA_PROCESSOR':
+            logger.info('Recieved new message %s' % message.__class__.__name__)
             processed: List[Dict] = []
             for scrap_response in message.data:
                 data = scrap_response['res']
@@ -144,16 +190,24 @@ class WorkerThread(AbstractThreadWorker, threading.Thread):
 
 class RefreshThread(threading.Thread):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        threading.Thread.__init__(self, *args, **kwargs)
+        self._log = logging.getLogger('solaredge.bot')
 
     def run(self):
         while not EXIT_SIG:
-            sleep(10*60)
-            print("Acquiring lock")
+            time.sleep(10*60)
+            logger.info("Acquiring lock")
             with lock:
-                print("Lock Acquired")
+                logger.info("Lock Acquired")
                 if browser:
-                    browser.refresh()
+                    try:
+                        logger.info("Refreshing browser")
+                        browser.refresh()
+                        logger.info("Browser refreshed")
+                        web_address_navigator(browser, _url_)
+                    except Exception as e:
+                        logger.error("Error refreshing browser, errpr:%s" % e)
+            logger.info("Lock releashed")
 
 
 def terminateProcess(signalNumber, frame):
