@@ -1,0 +1,45 @@
+{
+    "manifest_version": 2,
+    "name": "hide selenium",
+    "version": "1.0.0",
+    "applications": {
+        "gecko": {
+            "id": "scrapengine@bot"
+        }
+    },
+    "icons": {
+        "48": "beasts-48.png"
+    },
+    "permissions": [
+        "activeTab",
+        "tabs"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*/*"
+            ],
+            "js": [
+                "arrive.js",
+                "content.js"
+            ],
+            "run_at": "document_end"
+        }
+    ],
+    "browser_action": {
+        "default_icon": "beasts-32.png",
+        "theme_icons": [
+            {
+                "light": "beasts-32-light.png",
+                "dark": "beasts-32.png",
+                "size": 32
+            }
+        ],
+        "default_title": "Hide Selenium"
+    },
+    "background": {
+        "scripts": [
+            "background.js"
+        ]
+    }
+}
