@@ -98,7 +98,7 @@ class ScrappingThread(threading.Thread):
                         datetime=datetime.now(), data=data['data'])
                     self.dispatch_message(message)
             except JavascriptException as js_error:
-                print(js_error)
+                logger.error(js_error)
 
     def register_interest(self, thread: AbstractThreadWorker):
         self._interested_threads.append(thread)
