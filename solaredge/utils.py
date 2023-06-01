@@ -23,7 +23,7 @@ from config import ASSETS_PATH, EXTENSION_PATH
 import shutil
 STDEV = 0.5
 sleep_percentage = 1
-sleep_percentage = sleep_percentage * uniform(0.9, 1.1)
+sleep_percentage *= uniform(0.9, 1.1)
 
 
 def make_dir(_dir: str) -> None:
@@ -90,9 +90,7 @@ def get_time(labels):
         elif label == "today":
             results.append(datetime.now().strftime("%Y-%m-%d"))
 
-    results = results if len(results) > 1 else results[0]
-
-    return results
+    return results if len(results) > 1 else results[0]
 
 
 def get_chrome_driver():
@@ -104,12 +102,10 @@ def get_chrome_driver():
     else:
         for filename in os.listdir(driverpath):
             if filename == 'chromedriver.exe':
-                filepath = os.path.join(driverpath, filename)
-                return filepath
-
-    chrome_path = shutil.which(
-        "chromedriver") or shutil.which("chromedriver.exe")
-    if chrome_path:
+                return os.path.join(driverpath, filename)
+    if chrome_path := shutil.which("chromedriver") or shutil.which(
+        "chromedriver.exe"
+    ):
         return chrome_path
 
     try:
@@ -121,8 +117,9 @@ def get_chrome_driver():
 
 
 def get_geckodriver():
-    gecko_path = shutil.which("geckodriver") or shutil.which("geckodriver.exe")
-    if gecko_path:
+    if gecko_path := shutil.which("geckodriver") or shutil.which(
+        "geckodriver.exe"
+    ):
         return gecko_path
     gdd = GeckoDriverDownloader(ASSETS_PATH, ASSETS_PATH)
     _, sym_path = gdd.download_and_install()
@@ -168,7 +165,6 @@ def web_address_navigator(browser, link):
     """Checks and compares current URL of web _page and the URL to be
     navigated and if it is different, it does navigate"""
     current_url = get_current_url(browser)
-    total_timeouts = 0
     page_type = None  # file or directory
 
     # remove slashes at the end to compare efficiently
@@ -182,7 +178,8 @@ def web_address_navigator(browser, link):
     new_navigation = current_url != link
 
     if current_url is None or new_navigation:
-        link = link + "/" if page_type == "dir" else link  # directory links
+        link = f"{link}/" if page_type == "dir" else link
+        total_timeouts = 0
         # navigate faster
 
         while True:
@@ -193,12 +190,7 @@ def web_address_navigator(browser, link):
             except TimeoutException as exc:
                 if total_timeouts >= 7:
                     raise TimeoutException(
-                        "Retried {} times to GET '{}' webpage "
-                        "but failed out of a timeout!\n\t{}".format(
-                            total_timeouts,
-                            str(link).encode("utf-8"),
-                            str(exc).encode("utf-8"),
-                        )
+                        f"""Retried {total_timeouts} times to GET '{str(link).encode("utf-8")}' webpage but failed out of a timeout!\n\t{str(exc).encode("utf-8")}"""
                     )
                 total_timeouts += 1
                 sleep(2)
@@ -344,10 +336,7 @@ def set_log_context(logger, value):
                 # Not all handlers need to have context passed in so we ignore
                 # the error when handlers do not have set_context defined.
                 pass
-        if _logger.propagate is True:
-            _logger = _logger.parent
-        else:
-            _logger = None
+        _logger = _logger.parent if _logger.propagate is True else None
 
 
 class LoggingMixin:
@@ -367,7 +356,7 @@ class LoggingMixin:
             return self._log
         except AttributeError:
             self._log = logging.getLogger(
-                self.__class__.__module__ + '.' + self.__class__.__name__
+                f'{self.__class__.__module__}.{self.__class__.__name__}'
             )
             return self._log
 
@@ -405,8 +394,7 @@ class BotRuntimeHandler(logging.Handler):
         """
         """
         try:
-            relative_path = "%s/runtime.log" % (
-                str(datetime.now().date()))
+            relative_path = f"{str(datetime.now().date())}/runtime.log"
             full_path = os.path.join(self.local_base, relative_path)
             directory = os.path.dirname(full_path)
             if not os.path.exists(directory):
