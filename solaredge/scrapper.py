@@ -68,11 +68,12 @@ class ScrappingThread(threading.Thread):
 
     def ensure_extension_loaded(self):
         try:
-            engine = browser.execute_script(
-                'return document.getElementById("_ENGINE_")')
-            if engine:
-                logger.info("Scrap extension loaded , version:%s ts:%s" % (
-                    engine.get_attribute('data-version'), engine.get_attribute('data-ts')))
+            if engine := browser.execute_script(
+                'return document.getElementById("_ENGINE_")'
+            ):
+                logger.info(
+                    f"Scrap extension loaded , version:{engine.get_attribute('data-version')} ts:{engine.get_attribute('data-ts')}"
+                )
                 return
         except JavascriptException as err_r:
             logger.error(err_r)
@@ -81,7 +82,7 @@ class ScrappingThread(threading.Thread):
         self.load_page()
         while not EXIT_SIG:
             twait = self.get_random()
-            logger.info("Waiting for %s seconds "%twait)
+            logger.info(f"Waiting for {twait} seconds ")
             time.sleep(twait)
             try:
                 data = browser.execute_script('return __get_data()')
@@ -90,7 +91,7 @@ class ScrappingThread(threading.Thread):
                         datetime=datetime.now(), data=data['data'])
                     self.dispatch_message(message)
                 browser.execute_script('__scrap_data()')
-                logger.info('scraping data %s' % (datetime.now()))
+                logger.info(f'scraping data {datetime.now()}')
                 time.sleep(30)
                 data = browser.execute_script('return __get_data()')
                 if data and len(data['data']):
@@ -123,20 +124,18 @@ class WorkerThread(AbstractThreadWorker, threading.Thread):
                 self.process_message(message)
 
     def write_csv(self, data: List[Dict], path: str):
-        logger.info("Writing new data to %s" % (path))
+        logger.info(f"Writing new data to {path}")
         field_names = list(data[0].keys())
         try:
             write_obj = None
-            exits = os.path.exists(path)
-            if exits:
+            if exits := os.path.exists(path):
                 write_obj = open(path, 'a+', newline='')
                 dict_writer = DictWriter(write_obj, fieldnames=field_names)
-                dict_writer.writerows(data)
             else:
                 write_obj = open(path, 'w', newline='')
                 dict_writer = DictWriter(write_obj, fieldnames=field_names)
                 dict_writer.writeheader()
-                dict_writer.writerows(data)
+            dict_writer.writerows(data)
         except Exception as error:
             logger.error(error)
         finally:
@@ -157,32 +156,34 @@ class WorkerThread(AbstractThreadWorker, threading.Thread):
     def dump_json(self, data: Dict, path: str):
         try:
             with open(path, 'w') as json_obj:
-                logger.info("Dumping data to  %s" % (path))
+                logger.info(f"Dumping data to  {path}")
                 json.dump(data, json_obj)
         except Exception as e:
             logger.error(e)
 
     def process_message(self, message: ScrapMessage):
-        if self.role == 'DATA_PROCESSOR':
-            logger.info('Recieved new message %s' % message.__class__.__name__)
-            processed: List[Dict] = []
-            for scrap_response in message.data:
-                data = scrap_response['res']
-                if data and isinstance(data, dict):
-                    for x, y in data.items():
-                        i = {}
-                        i['panel'] = x
-                        i['energy'] = y['energy']
-                        i['units'] = y['units']
-                        i['unscaledEnergy'] = y['unscaledEnergy']
-                        i['moduleEnergy'] = y['moduleEnergy']
-                        i['relayState'] = y['relayState']
-                        i['date'] = message.datetime
-                        processed.append(i)
-            if len(processed):
-                csv_path, json_path = self.get_write_path(message.datetime)
-                self.write_csv(processed, csv_path)
-                self.dump_json(message.data[0]['res'], json_path)
+        if self.role != 'DATA_PROCESSOR':
+            return
+        logger.info(f'Recieved new message {message.__class__.__name__}')
+        processed: List[Dict] = []
+        for scrap_response in message.data:
+            data = scrap_response['res']
+            if data and isinstance(data, dict):
+                for x, y in data.items():
+                    i = {
+                        'panel': x,
+                        'energy': y['energy'],
+                        'units': y['units'],
+                        'unscaledEnergy': y['unscaledEnergy'],
+                        'moduleEnergy': y['moduleEnergy'],
+                        'relayState': y['relayState'],
+                        'date': message.datetime,
+                    }
+                    processed.append(i)
+        if len(processed):
+            csv_path, json_path = self.get_write_path(message.datetime)
+            self.write_csv(processed, csv_path)
+            self.dump_json(message.data[0]['res'], json_path)
 
     def put_message(self, message: Any):
         self.queue.put(message)
@@ -206,7 +207,7 @@ class RefreshThread(threading.Thread):
                         logger.info("Browser refreshed")
                         web_address_navigator(browser, _url_)
                     except Exception as e:
-                        logger.error("Error refreshing browser, errpr:%s" % e)
+                        logger.error(f"Error refreshing browser, errpr:{e}")
             logger.info("Lock releashed")
 
 

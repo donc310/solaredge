@@ -28,7 +28,7 @@ def create_proxied_browser_instance(proxy=None, use_proxy=False, headless=False,
     try:
         extension = create_firefox_extension()
     except Exception as a:
-        print(str(a))
+        print(a)
         extension = None
     if extension:
         chrome_options.add_extension(extension)
@@ -41,7 +41,7 @@ def create_proxied_browser_instance(proxy=None, use_proxy=False, headless=False,
         options=chrome_options,
         desired_capabilities=capabilities
     )
-  
+
     return driver
 
 
@@ -91,7 +91,7 @@ def set_selenium_local_session(
     try:
         extension = create_firefox_extension()
     except Exception as a:
-        print(str(a))
+        print(a)
         extension = None
     if extension:
         browser.install_addon(extension, temporary=True)
